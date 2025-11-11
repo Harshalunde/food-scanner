@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
-import { HeartPulse, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { Camera, Info, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export default function FoodScanner() {
   const [barcode, setBarcode] = useState("");
@@ -10,279 +10,235 @@ export default function FoodScanner() {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState(null);
 
-  // -------------------------------
-  // helper for safe numeric read
-  const n = (obj, key) => (obj && Number(obj[key])) || 0;
-
-  // -------------------------------
-  // health logic
-  function analyzeProduct(nutri = {}) {
-    const sugar = n(nutri, "sugars_100g");
-    const fat = n(nutri, "fat_100g");
-    const satFat = n(nutri, "saturated-fat_100g");
-    const salt = n(nutri, "salt_100g");
-    const protein = n(nutri, "proteins_100g");
-    const fiber = n(nutri, "fiber_100g");
-
-    const good = [];
-    const concerns = [];
-
-    if (protein >= 8) good.push("High in protein — supports muscle growth");
-    if (fiber >= 3) good.push("Contains dietary fibre — good for digestion");
-    if (sugar <= 5) good.push("Low sugar — safe for daily use");
-    if (fat <= 3) good.push("Low fat — heart-friendly product");
-
-    if (sugar > 22.5) concerns.push("High sugar — may cause blood sugar spikes");
-    else if (sugar > 5) concerns.push("Moderate sugar — limit consumption");
-    if (satFat > 5) concerns.push("High saturated fat — increases cholesterol");
-    if (salt > 1.5) concerns.push("High salt — may increase blood pressure");
-
-    let score = 100 - sugar * 1.5 - satFat * 2 - salt * 10 - fat * 0.8 + protein * 2;
-    if (score < 0) score = 0;
-
-    let grade = "F", color = "bg-red-600";
-    if (score >= 85) { grade = "A"; color = "bg-green-600"; }
-    else if (score >= 70) { grade = "B"; color = "bg-lime-500"; }
-    else if (score >= 55) { grade = "C"; color = "bg-yellow-400"; }
-    else if (score >= 40) { grade = "D"; color = "bg-orange-500"; }
-    else { grade = "E"; color = "bg-red-500"; }
-
-    setAnalysis({ good, concerns, score: Math.round(score), grade, color });
-  }
-
-  // -------------------------------
-  // fetch product (India → global → demo)
-  async function fetchProductData(code) {
-    try {
-      let res = await fetch(`https://in.openfoodfacts.org/api/v2/product/${code}`);
-      let data = await res.json();
-      if (!data || data.status === 0) {
-        res = await fetch(`https://world.openfoodfacts.net/api/v2/product/${code}`);
-        data = await res.json();
-      }
-      if (!data || data.status === 0) {
-        return {
-          product_name: "Nestlé KitKat (Demo)",
-          brands: "Nestlé",
-          quantity: "37 g",
-          image_url: "https://m.media-amazon.com/images/I/61yBjs+HvoL._SL1500_.jpg",
-          nutriments: {
-            "energy-kcal_100g": 518,
-            fat_100g: 26,
-            "saturated-fat_100g": 14,
-            carbohydrates_100g: 64,
-            sugars_100g: 51,
-            proteins_100g: 7,
-            salt_100g: 0.2,
-            fiber_100g: 0.5
-          },
-          ingredients_text:
-            "Sugar, Wheat Flour, Cocoa Butter, Milk Solids, Cocoa Mass, Vegetable Fat, Emulsifier (Soy Lecithin), Salt, Yeast, Artificial Flavouring.",
-          categories: "Chocolate bars, Snacks",
-          labels: "Vegetarian",
-        };
-      }
-      return data.product;
-    } catch {
-      throw new Error("fetch failed");
-    }
-  }
-
-  // -------------------------------
-  // search
-  async function handleSearch(e) {
-    e.preventDefault();
-    setError(""); setProduct(null); setAnalysis(null);
-    if (!barcode.trim()) return setError("Please enter a barcode.");
-    setLoading(true);
-    try {
-      const data = await fetchProductData(barcode);
-      setProduct(data);
-      analyzeProduct(data.nutriments);
-    } catch {
-      setError("❌ Product not found in Indian or Global database.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const n = (o, k) => (o && Number(o[k])) || 0;
 
   const colorFor = (v, low, med) =>
     v <= low ? "bg-green-100 text-green-800"
       : v <= med ? "bg-yellow-100 text-yellow-800"
       : "bg-red-100 text-red-800";
 
-  // -------------------------------
-  // ingredients renderer
-  function renderIngredients(p) {
-    if (!p) return null;
-    if (Array.isArray(p.ingredients) && p.ingredients.length > 0) {
-      return (
-        <ul className="list-disc pl-5 text-sm text-gray-700">
-          {p.ingredients.map((ing, i) => (
-            <li key={i}>
-              {ing.text || ing.name}
-              {ing.percent && <span className="text-gray-500"> — {ing.percent}%</span>}
-            </li>
-          ))}
-        </ul>
-      );
+  // 🔍 Fetch + analyze
+  async function handleSearch(e) {
+    e.preventDefault();
+    if (!barcode.trim()) return setError("Please enter a barcode.");
+    setError("");
+    setProduct(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}`);
+      const data = await res.json();
+
+      if (!data || data.status === 0) {
+        throw new Error("Product not found");
+      }
+
+      const p = data.product;
+      setProduct(p);
+      analyze(p.nutriments);
+    } catch {
+      setError("❌ Product not found. Try another barcode or Demo.");
+    } finally {
+      setLoading(false);
     }
-    if (p.ingredients_text) {
-      return (
-        <ul className="list-disc pl-5 text-sm text-gray-700">
-          {p.ingredients_text.split(",").map((part, i) => (
-            <li key={i}>{part.trim()}</li>
-          ))}
-        </ul>
-      );
-    }
-    return <p className="text-sm text-gray-600">Ingredient details not available.</p>;
   }
 
-  // -------------------------------
-  // UI
+  // 🧮 Nutrition analysis
+  function analyze(nutri = {}) {
+    const sugar = n(nutri, "sugars_100g");
+    const fat = n(nutri, "fat_100g");
+    const sat = n(nutri, "saturated-fat_100g");
+    const salt = n(nutri, "salt_100g");
+    const protein = n(nutri, "proteins_100g");
+    const fiber = n(nutri, "fiber_100g");
+
+    const good = [];
+    const bad = [];
+
+    if (protein >= 8) good.push("High in protein — great for muscle repair");
+    if (fiber >= 3) good.push("Contains dietary fiber — supports digestion");
+    if (sugar <= 5) good.push("Low sugar — daily safe choice");
+
+    if (sugar > 22.5) bad.push("High sugar — may increase blood sugar");
+    if (sat > 5) bad.push("High saturated fat — unhealthy for heart");
+    if (salt > 1.5) bad.push("High sodium — may raise blood pressure");
+
+    let score = 100 - sugar * 1.2 - sat * 2 - salt * 8 - fat * 1 + protein * 2;
+    let grade = "F", color = "bg-red-600";
+    if (score > 85) { grade = "A"; color = "bg-green-600"; }
+    else if (score > 70) { grade = "B"; color = "bg-lime-500"; }
+    else if (score > 55) { grade = "C"; color = "bg-yellow-400"; }
+    else if (score > 40) { grade = "D"; color = "bg-orange-500"; }
+
+    setAnalysis({ score: Math.round(score), grade, color, good, bad });
+  }
+
+  // ✨ UI Start
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4">
-      {/* header */}
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-indigo-100">
+      {/* HERO SECTION */}
       <motion.div
-        initial={{opacity:0,y:-20}}
-        animate={{opacity:1,y:0}}
-        transition={{duration:0.6}}
-        className="w-full max-w-3xl text-center rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-500 text-white py-6 shadow-lg mb-6"
+        initial={{ opacity: 0, y: -40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="text-center py-12 bg-gradient-to-r from-indigo-600 via-blue-500 to-purple-500 text-white shadow-lg"
       >
-        <h1 className="text-3xl font-bold flex justify-center items-center gap-2">
-          <HeartPulse className="w-7 h-7"/> Food Health Scanner
+        <h1 className="text-5xl font-extrabold mb-3 tracking-tight drop-shadow-lg">
+          Food Scanner 2.0
         </h1>
-        <p className="opacity-90 text-sm">Barcode → Ingredients → 100g Nutrition → Health Score</p>
+        <p className="opacity-90 text-lg">
+          Scan. Analyze. Choose smarter 🍴
+        </p>
       </motion.div>
 
-      {/* search */}
-      <form onSubmit={handleSearch} className="flex w-full max-w-lg gap-2 mb-6">
-        <input
-          className="flex-1 border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          placeholder="Enter barcode (e.g. 8901058816338)"
-          value={barcode}
-          onChange={(e)=>setBarcode(e.target.value)}
-        />
-        <button className="bg-indigo-600 text-white px-5 rounded-lg hover:bg-indigo-700">Search</button>
-        <button
-          type="button"
-          onClick={()=>setBarcode("8901058816338")}
-          className="bg-gray-200 text-gray-700 px-3 rounded-lg hover:bg-gray-300"
+      {/* SEARCH BAR */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.4 }}
+        className="max-w-3xl mx-auto mt-10 px-6"
+      >
+        <form
+          onSubmit={handleSearch}
+          className="bg-white shadow-xl rounded-2xl p-5 flex flex-col md:flex-row gap-4 items-center border border-gray-100"
         >
-          Demo
-        </button>
-      </form>
+          <input
+            type="text"
+            placeholder="Enter or scan barcode (e.g. 6001068586806)"
+            value={barcode}
+            onChange={(e) => setBarcode(e.target.value)}
+            className="flex-1 p-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-700"
+          />
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-semibold shadow">
+            Search
+          </button>
+          <button
+            type="button"
+            onClick={() => setBarcode("6001068586806")}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-6 py-3 rounded-xl font-medium"
+          >
+            Demo
+          </button>
+        </form>
 
-      {loading && <div className="text-gray-600 animate-pulse">Fetching product data...</div>}
-      {error && <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded-lg max-w-lg">{error}</div>}
+        {loading && (
+          <div className="text-center mt-6 text-gray-500 animate-pulse">
+            Analyzing your product...
+          </div>
+        )}
+      </motion.div>
 
+      {/* RESULT CARD */}
       {product && (
         <motion.div
-          initial={{opacity:0,scale:0.98}}
-          animate={{opacity:1,scale:1}}
-          transition={{duration:0.5}}
-          className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-6 mt-4"
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="max-w-4xl mx-auto bg-white rounded-3xl shadow-2xl mt-12 p-8 border border-gray-100"
         >
-          {/* top */}
-          <div className="flex flex-col md:flex-row items-center gap-6">
+          {/* PRODUCT HEADER */}
+          <div className="flex flex-col md:flex-row gap-8 items-center md:items-start">
             <img
-              src={product.image_front_small_url || product.image_url || "https://via.placeholder.com/150"}
+              src={product.image_front_small_url || product.image_url || "https://via.placeholder.com/200"}
               alt={product.product_name}
-              className="w-36 h-36 object-contain rounded-lg border bg-gray-50"
+              className="w-48 h-48 rounded-2xl border shadow-sm object-contain bg-gray-50"
             />
-            <div className="text-center md:text-left">
-              <h2 className="text-2xl font-bold text-gray-800">{product.product_name}</h2>
+            <div className="flex-1">
+              <h2 className="text-3xl font-bold text-gray-800 mb-2">
+                {product.product_name}
+              </h2>
               <p className="text-gray-600">{product.brands}</p>
               <p className="text-gray-600">{product.quantity}</p>
+
               {analysis && (
-                <div className={`inline-block mt-3 px-4 py-2 rounded-lg text-white font-semibold ${analysis.color}`}>
+                <div className={`mt-4 inline-block text-white font-semibold px-5 py-2 rounded-xl ${analysis.color} shadow-lg`}>
                   Health Grade: {analysis.grade} ({analysis.score}/100)
                 </div>
               )}
             </div>
           </div>
 
-          {/* good/bad */}
+          {/* NUTRIENT CHIPS */}
+          <div className="mt-10 grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className={`p-3 rounded-xl text-center font-medium ${colorFor(n(product.nutriments, "sugars_100g"), 5, 22.5)}`}>
+              Sugar <div className="font-bold">{n(product.nutriments, "sugars_100g")} g</div>
+            </div>
+            <div className={`p-3 rounded-xl text-center font-medium ${colorFor(n(product.nutriments, "fat_100g"), 3, 17.5)}`}>
+              Fat <div className="font-bold">{n(product.nutriments, "fat_100g")} g</div>
+            </div>
+            <div className={`p-3 rounded-xl text-center font-medium ${colorFor(n(product.nutriments, "saturated-fat_100g"), 1.5, 5)}`}>
+              Saturated Fat <div className="font-bold">{n(product.nutriments, "saturated-fat_100g")} g</div>
+            </div>
+            <div className={`p-3 rounded-xl text-center font-medium ${colorFor(n(product.nutriments, "salt_100g"), 0.3, 1.5)}`}>
+              Salt <div className="font-bold">{n(product.nutriments, "salt_100g")} g</div>
+            </div>
+            <div className="p-3 rounded-xl bg-indigo-50 text-indigo-700 text-center font-medium">
+              Protein <div className="font-bold">{n(product.nutriments, "proteins_100g")} g</div>
+            </div>
+            <div className="p-3 rounded-xl bg-gray-100 text-center font-medium">
+              Energy <div className="font-bold">{n(product.nutriments, "energy-kcal_100g")} kcal</div>
+            </div>
+          </div>
+
+          {/* PIE CHART */}
+          <div className="mt-12 text-center">
+            <h3 className="text-xl font-semibold text-indigo-700 mb-4">
+              🍽️ Nutrient Breakdown (per 100 g)
+            </h3>
+            <div className="flex justify-center">
+              <PieChart width={320} height={260}>
+                <Pie
+                  dataKey="value"
+                  data={[
+                    { name: "Fat", value: n(product.nutriments, "fat_100g") },
+                    { name: "Sugars", value: n(product.nutriments, "sugars_100g") },
+                    { name: "Protein", value: n(product.nutriments, "proteins_100g") },
+                    { name: "Carbs", value: n(product.nutriments, "carbohydrates_100g") },
+                  ]}
+                  cx="50%" cy="50%" outerRadius={90} label
+                >
+                  <Cell fill="#f87171" /><Cell fill="#facc15" /><Cell fill="#4ade80" /><Cell fill="#60a5fa" />
+                </Pie>
+                <Tooltip /><Legend />
+              </PieChart>
+            </div>
+          </div>
+
+          {/* GOOD vs BAD */}
           {analysis && (
-            <div className="mt-8 grid md:grid-cols-2 gap-4">
-              <div className="bg-green-50 border-l-4 border-green-600 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="text-green-600"/><h3 className="text-green-700 font-semibold">👍 Good Aspects</h3>
-                </div>
+            <div className="mt-10 grid md:grid-cols-2 gap-5">
+              <div className="bg-green-50 border-l-4 border-green-600 rounded-lg p-5 shadow-sm">
+                <h4 className="text-green-700 font-semibold flex items-center gap-2 mb-3">
+                  <CheckCircle2 /> Good Aspects
+                </h4>
                 <ul className="list-disc pl-5 text-gray-700 text-sm">
-                  {analysis.good.length?analysis.good.map((g,i)=><li key={i}>{g}</li>):<li>No notable benefits.</li>}
+                  {analysis.good.length
+                    ? analysis.good.map((g, i) => <li key={i}>{g}</li>)
+                    : <li>No positive aspects found.</li>}
                 </ul>
               </div>
-              <div className="bg-red-50 border-l-4 border-red-600 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="text-red-600"/><h3 className="text-red-700 font-semibold">⚠️ Concerns</h3>
-                </div>
+
+              <div className="bg-red-50 border-l-4 border-red-600 rounded-lg p-5 shadow-sm">
+                <h4 className="text-red-700 font-semibold flex items-center gap-2 mb-3">
+                  <AlertTriangle /> Concerns
+                </h4>
                 <ul className="list-disc pl-5 text-gray-700 text-sm">
-                  {analysis.concerns.length?analysis.concerns.map((c,i)=><li key={i}>{c}</li>):<li>No major concerns.</li>}
+                  {analysis.bad.length
+                    ? analysis.bad.map((c, i) => <li key={i}>{c}</li>)
+                    : <li>No major concerns.</li>}
                 </ul>
               </div>
             </div>
           )}
 
-          {/* nutrient chips */}
-          <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-            <div className={`p-2 rounded ${colorFor(n(product.nutriments,"sugars_100g"),5,22.5)}`}>
-              Sugar: {n(product.nutriments,"sugars_100g")} g / 100g
+          {/* INGREDIENTS */}
+          <div className="mt-12">
+            <h4 className="text-lg font-semibold text-indigo-700 mb-2 flex items-center gap-2">
+              <Info /> Ingredients
+            </h4>
+            <div className="bg-gray-50 border rounded-lg p-4 text-sm text-gray-700 leading-relaxed">
+              {product.ingredients_text || "Ingredient details unavailable."}
             </div>
-            <div className={`p-2 rounded ${colorFor(n(product.nutriments,"fat_100g"),3,17.5)}`}>
-              Fat: {n(product.nutriments,"fat_100g")} g / 100g
-            </div>
-            <div className={`p-2 rounded ${colorFor(n(product.nutriments,"saturated-fat_100g"),1.5,5)}`}>
-              Sat Fat: {n(product.nutriments,"saturated-fat_100g")} g / 100g
-            </div>
-            <div className={`p-2 rounded ${colorFor(n(product.nutriments,"salt_100g"),0.3,1.5)}`}>
-              Salt: {n(product.nutriments,"salt_100g")} g / 100g
-            </div>
-            <div className="p-2 rounded bg-indigo-50 text-indigo-700">
-              Protein: {n(product.nutriments,"proteins_100g")} g / 100g
-            </div>
-            <div className="p-2 rounded bg-gray-100 text-gray-800">
-              Energy: {n(product.nutriments,"energy-kcal_100g")} kcal / 100g
-            </div>
-          </div>
-
-          {/* 100g explanation */}
-          <div className="mt-3 text-sm text-gray-700 bg-blue-50 border-l-4 border-blue-500 rounded-lg p-3">
-            <strong>Note:</strong> All nutrition values are measured per <strong>100 grams</strong> of product.
-            This helps compare foods easily — for example, 20 g sugar/100 g = 20% sugar by weight.
-          </div>
-
-          {/* pie chart */}
-          <div className="mt-10">
-            <h3 className="text-lg font-semibold text-indigo-700 text-center mb-3">
-              🍽️ Nutrition Composition (per 100 g)
-            </h3>
-            <div className="flex justify-center">
-              <PieChart width={300} height={260}>
-                <Pie
-                  dataKey="value"
-                  data={[
-                    { name:"Fat (g)", value:n(product.nutriments,"fat_100g") },
-                    { name:"Sugars (g)", value:n(product.nutriments,"sugars_100g") },
-                    { name:"Protein (g)", value:n(product.nutriments,"proteins_100g") },
-                    { name:"Carbs (g)", value:n(product.nutriments,"carbohydrates_100g") },
-                  ]}
-                  cx="50%" cy="50%" outerRadius={90} label
-                >
-                  <Cell fill="#f87171"/><Cell fill="#facc15"/><Cell fill="#4ade80"/><Cell fill="#60a5fa"/>
-                </Pie>
-                <Tooltip/><Legend/>
-              </PieChart>
-            </div>
-          </div>
-
-          {/* ingredients */}
-          <div className="mt-8">
-            <h3 className="text-lg font-semibold text-indigo-700 flex items-center gap-2">
-              <Info className="text-indigo-600"/> Ingredients
-            </h3>
-            <div className="mt-2">{renderIngredients(product)}</div>
           </div>
         </motion.div>
       )}
